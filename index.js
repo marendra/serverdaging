@@ -3,7 +3,7 @@ import admin from 'firebase-admin';
 import {getFirestore} from "firebase-admin/firestore";
 
 const { Client ,LocalAuth} = pkg;
-const serviceAccount  = require("./daging.json")
+import serviceAccount  from "./daging.json" with {type:'json'}
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
