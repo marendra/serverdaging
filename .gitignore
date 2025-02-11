@@ -4,3 +4,5 @@ yarn-debug.log
 yarn-error.log
 /text
 daging.json
+.wwebjs_auth
+.wwebjs_cache
