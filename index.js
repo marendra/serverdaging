@@ -9,7 +9,7 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   // Optionally, you can add other Firebase config here.
 });
-
+let targetGroupId = '';
 const db = getFirestore();
 
 import qrcode from "qrcode-terminal";
@@ -22,35 +22,34 @@ const client = new Client({
     }
 });
 
-client.on("ready",()=>{
+client.on("ready",async ()=> {
+
     console.log("Client is ready!");
 })
 
-client.on('message', async message => {
-    const chat = await message.getChat();
+    client.on('message', async message => {
+try {
+        // Retrieve chat details:
+        const chat = await message.getChat();
 
-    // Check if it's a group message and matches the specific group name
-    if (chat.isGroup && chat.name === "LIST HARGA DARI CUSTOUMER") {
-        console.log('Message from target group:', message.body);
+        // Check if the message is coming from the target group:
+        if (chat.id._serialized === "120363316186563669@g.us") {
+            console.log("Received message from target group:", message.body);
 
-        // Log message details
-        if (message.body.toLowerCase().includes("sari berkat abadi") || message.body.toLowerCase().includes("suri") || message.body.toLowerCase().includes("pt estika")) {
-            await db.collection("waMsg").add({
+            // Write the message into Cloud Firestore using milliseconds since epoch:
+            await db.collection("groupMessages").add({
+                groupId: chat.id._serialized,
+                groupName: chat.name,
                 message: message.body,
-                timestamp: message.timestamp,
-                type: message.type,
-            })
-        }
-        // Handle different types of messages
-        if (message.hasMedia) {
-            const media = await message.downloadMedia();
-            console.log('Media received:', media.mimetype);
-        }
+                timestamp: Date.now() // Timestamp in milliseconds since epoch
+            });
 
-        // Your message handling logic here
-        // ...
+            console.log("Message stored in Cloud Firestore.");
+        }
+    } catch (error) {
+        console.error("Error processing or saving message:", error);
     }
-});
+    });
 
 client.on("qr",qr=>{
       qrcode.generate(qr, {small: true});
