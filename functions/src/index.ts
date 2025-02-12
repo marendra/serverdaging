@@ -1,19 +1,19 @@
-/**
- * Import function triggers from their respective submodules:
- *
- * import {onCall} from "firebase-functions/v2/https";
- * import {onDocumentWritten} from "firebase-functions/v2/firestore";
- *
- * See a full list of supported triggers at https://firebase.google.com/docs/functions
- */
+import * as functions from 'firebase-functions';
+import * as admin from 'firebase-admin';
+import { CloudTasksClient } from '@google-cloud/tasks';
 
-import {onRequest} from "firebase-functions/v2/https";
-import * as logger from "firebase-functions/logger";
+admin.initializeApp();
+const tasksClient = new CloudTasksClient();
 
-// Start writing functions
-// https://firebase.google.com/docs/functions/typescript
+exports.onTextEntryCreate = functions.firestore.document("waMsgs/{msgId}").onCreate(async (snapshot:admin.firestore.DocumentSnapshot, context) => {
+    const data = snapshot.data();
 
-// export const helloWorld = onRequest((request, response) => {
-//   logger.info("Hello logs!", {structuredData: true});
-//   response.send("Hello from Firebase!");
-// });
+    const docId = context.params.docId;
+    const project = 'daging-data'; // Replace with your project ID
+    const location = 'asia-southeast2'; // e.g., 'us-central1'
+    const queue = 'extractPrices';
+    const parent = tasksClient.queuePath(project, location, queue);
+    const taskPayload: TaskPayload = { docId: docId };
+
+}
+)

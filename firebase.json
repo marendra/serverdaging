@@ -14,5 +14,23 @@
         "npm --prefix \"$RESOURCE_DIR\" run build"
       ]
     }
-  ]
+  ],
+  "hosting": {
+    "target": "text-extractor",
+    "public": "cloudrun",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+        {
+          "source": "**",
+          "run": {
+            "serviceId": "text-extractor-ts",
+            "region": "asia-southeast2"
+          }
+        }
+      ]
+  }
 }

@@ -34,13 +34,13 @@ client.on('message', async message => {
         console.log('Message from target group:', message.body);
 
         // Log message details
-
-        await db.collection("waMsg").add({
-            message: message.body,
-            timestamp: message.timestamp,
-            type: message.type,
-        })
-
+        if (message.body.toLowerCase().includes("sari berkat abadi") || message.body.toLowerCase().includes("suri") || message.body.toLowerCase().includes("pt estika")) {
+            await db.collection("waMsg").add({
+                message: message.body,
+                timestamp: message.timestamp,
+                type: message.type,
+            })
+        }
         // Handle different types of messages
         if (message.hasMedia) {
             const media = await message.downloadMedia();
