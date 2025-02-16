@@ -5,7 +5,7 @@ import { CloudTasksClient } from '@google-cloud/tasks';
 admin.initializeApp();
 const tasksClient = new CloudTasksClient();
 
-exports.onTextEntryCreate = functions.firestore.document("waMsgs/{msgId}").onCreate(async (snapshot:admin.firestore.DocumentSnapshot, context) => {
+exports.onTextEntryCreate = functions.firestore.document("groupMessages/{msgId}").onCreate(async (snapshot:admin.firestore.DocumentSnapshot, context) => {
     const data = snapshot.data();
 
     const docId = context.params.docId;

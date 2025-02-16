@@ -41,6 +41,7 @@ try {
                 groupId: chat.id._serialized,
                 groupName: chat.name,
                 message: message.body,
+                read:false,
                 timestamp: Date.now() // Timestamp in milliseconds since epoch
             });
 
