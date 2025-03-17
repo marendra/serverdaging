@@ -38,7 +38,6 @@ const prompt = (textExtract)=>`You are a JSON data extraction expert. Analyze th
 
 [{ 
 
-"Country": "India",  
 "MeatType": "Specific meat type from approved list",  
 "Brands": "Exact brand name from approved list",  
 "Prices": integer value following conversion rules  
@@ -62,10 +61,10 @@ const prompt = (textExtract)=>`You are a JSON data extraction expert. Analyze th
 Input Text: "Anzco Veal Trunk 82.5/kg | Alliance Chucktender 87500 | Greenlea/Teys Sirloin 92.3"  
 Output:  
 [  
-{"Country":"Australia","MeatType":"Veal Trunk","Brands":"Anzco","Prices":82500},  
-{"Country":"Australia","MeatType":"Chucktender","Brands":"Alliance","Prices":87500},  
-{"Country":"Australia","MeatType":"Sirloin","Brands":"Greenlea","Prices":92300},  
-{"Country":"Australia","MeatType":"Sirloin","Brands":"Teys","Prices":92300}  
+{"MeatType":"Veal Trunk","Brands":"Anzco","Prices":82500},  
+{"MeatType":"Chucktender","Brands":"Alliance","Prices":87500},  
+{"MeatType":"Sirloin","Brands":"Greenlea","Prices":92300},  
+{"MeatType":"Sirloin","Brands":"Teys","Prices":92300}  
 ]
 
 # RULES
@@ -136,8 +135,10 @@ for (const doc of alldata.docs) {
   const data = doc.data()
   const docId = doc.id
   const start = Date.now()
+    const Country = "India"
+   const Timestamp = data.timestamp
   if (data.message.includes(companyId)){
-    const Timestamp = data.timestamp
+
       const Company = companyName
 
     const textPrompt = prompt( data.message)
@@ -170,7 +171,8 @@ console.log("receiving streamm")
 
 	jsonData.forEach((data)=>{
         let customizedData = {
-            Company,Timestamp,...data
+
+          Country, Company,Timestamp,...data
         }
 		PromiseData.push(
 			db.collection("pricesData").add(customizedData)
@@ -193,11 +195,11 @@ console.log("receiving streamm")
 console.log(`Total updated ${companyName} data`, totalUpdate)
 }
 
-async function main () {
+async function readIndia () {
   const arrayCompanyId=["Cabang Duri Kosambi","*Cabang Karawaci*","E M S","CITRA SUMBER NUSANTARA","ARDHANA PERMATA ANUGERAH","Hijrahfood","https://maps.app.goo.gl/FuM13jLAc3Bh2moQ8?g_st=aw","https://maps.app.goo.gl/f3oVp2Pa3BfjsKsTA"]
 
   const arrayCompanyName = ["Suri Nusantara Jaya Kosambi","Suri Nusantara Jaya Karawaci","E M S","CITRA SUMBER NUSANTARA","ARDHANA PERMATA ANUGERAH","Hijrahfood","ESTIKA TATA TIARA PUSAT","ESTIKA TATA TIARA TGR"]
-  const alldata = await db.collection("groupMessages").where("read", "==", false).get();
+  const alldata = await db.collection("groupMessages").where("readIndia", "==", false).get();
 
     for (let i = 0; i < arrayCompanyId.length; i++) {
         const companyId = arrayCompanyId[i];
@@ -450,5 +452,50 @@ async function getGroupMmessages(currentDate){
 }
 
 async function setFalse(startDate) {
+  const date = new Date(startDate)
+
+  const startOfDay = new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate()
+  );
+
+  startOfDay.setHours(0, 0, 0, 0);
+  const snapshow = await db.collection("groupMessages").where("timestamp", ">=", startOfDay.getTime()).get();
+
+  for (let i = 0; i < snapshow.docs.length; i++) {
+    const id = snapshow.docs[i].id
+    await db.collection("groupMessages").doc(id).update({
+      readIndia: false,
+      readAustralia: false,
+      readUsa: false,
+      readBrazil: false,
+    })
+  }
+  console.log("Done updated " + snapshow.docs.length + " messages")
 
 }
+
+
+
+async function getPricesData(startDate) {
+    const date = new Date(startDate)
+    const startOfDay = new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate()
+    );
+
+    console.log(startOfDay)
+    // Add 24 hours and subtract 1 millisecond
+    const endOfDay = new Date(startOfDay.getTime() + 86400000 - 1);
+    console.log(startOfDay.getTime())
+    console.log(endOfDay.getTime())
+
+  const result = await db.collection("pricesData").where("Timestamp", ">=", startOfDay.getTime()).where("Timestamp", "<=", endOfDay.getTime()).get();
+console.log("Total data :", result.docs.length)
+
+}
+
+
+readIndia()
