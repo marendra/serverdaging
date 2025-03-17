@@ -41,7 +41,10 @@ try {
                 groupId: chat.id._serialized,
                 groupName: chat.name,
                 message: message.body,
-                read:false,
+                readIndia:false,
+                readAustralia:false,
+                readUsa:false,
+                readBrazil:false,
                 timestamp: Date.now() // Timestamp in milliseconds since epoch
             });
 
