@@ -183,7 +183,7 @@ console.log("receiving streamm")
 	console.log("data inserted")
 
     await db.collection("groupMessages").doc(docId).update({
-    read:true
+    readIndia:true
   })
   const end = Date.now()
   console.log("Time taken", (end - start)/1000,"s")
@@ -497,5 +497,19 @@ console.log("Total data :", result.docs.length)
 
 }
 
+async function deletePricesData(startDate) {
+  const date = new Date(startDate)
+  const startOfDay = new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate()
+  )
+  const result = await db.collection("pricesData").where("Timestamp", ">=", startOfDay.getTime()).get();
+  for (let i = 0; i < result.docs.length; i++) {
+    const id = result.docs[i].id
+    await db.collection("pricesData").doc(id).delete()
+  }
+  console.log("Done deleted " + result.docs.length + " messages")
+}
 
 readIndia()
