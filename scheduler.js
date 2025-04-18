@@ -197,9 +197,9 @@ console.log(`Total updated ${companyName} data`, totalUpdate)
 
 async function readIndia () {
   console.log("Read India Meat Type")
-  const arrayCompanyId=["Cabang Duri Kosambi","*Cabang Karawaci*","E M S","CITRA SUMBER NUSANTARA","ARDHANA PERMATA ANUGERAH","Hijrahfood","https://maps.app.goo.gl/FuM13jLAc3Bh2moQ8?g_st=aw","https://maps.app.goo.gl/f3oVp2Pa3BfjsKsTA","Berkat Mandiri Prima"]
+  const arrayCompanyId=["Cabang Duri Kosambi","*Cabang Karawaci*","E M S","CITRA SUMBER NUSANTARA","ARDHANA PERMATA ANUGERAH","Hijrahfood","https://maps.app.goo.gl/FuM13jLAc3Bh2moQ8?g_st=aw","https://maps.app.goo.gl/f3oVp2Pa3BfjsKsTA","Berkat Mandiri Prima","PT.RASKA"]
 
-  const arrayCompanyName = ["Suri Nusantara Jaya Kosambi","Suri Nusantara Jaya Karawaci","E M S","CITRA SUMBER NUSANTARA","ARDHANA PERMATA ANUGERAH","Hijrahfood","ESTIKA TATA TIARA PUSAT","ESTIKA TATA TIARA TGR","Berkat Mandiri Prima"]
+  const arrayCompanyName = ["Suri Nusantara Jaya Kosambi","Suri Nusantara Jaya Karawaci","E M S","CITRA SUMBER NUSANTARA","ARDHANA PERMATA ANUGERAH","Hijrahfood","ESTIKA TATA TIARA PUSAT","ESTIKA TATA TIARA TGR","Berkat Mandiri Prima","RASKA ANUGERAH UTAMA"]
   const alldata = await db.collection("groupMessages").where("readIndia", "==", false).get();
 
     for (let i = 0; i < arrayCompanyId.length; i++) {
@@ -350,84 +350,74 @@ async function findMinMaxPricesByMeatType(dateStr = null) {
     }
 
     // Convert snapshot to array
-    const items = [];
-    snapshot.forEach(doc => items.push(doc.data()));
+    const priceData = []
 
-    // First group by meat type
-    const meatTypeGroups = {};
+
+    snapshot.forEach((doc) => {
+    priceData.push({
+      MeatType: doc.data().MeatType,
+      brand: doc.data().Brands,
+      price: doc.data().Prices,
+      distributor: doc.data().Company
+    });
+  });
+
+  // Group data by type-brand combination
+  const groupedData = {};
+
+  priceData.forEach(item => {
+    const key = `${item.MeatType}-${item.brand}`;
+
+    if (!groupedData[key]) {
+      groupedData[key] = [];
+    }
+
+    groupedData[key].push(item);
+  });
+
+  // Process each group to find min and max
+  const results = [];
+
+  Object.keys(groupedData).forEach(key => {
+    const items = groupedData[key];
+    const MeatType = items[0].MeatType;
+    const brand = items[0].brand;
+
+    // Find min and max across all distributors
+    let minItem = items[0];
+    let maxItem = items[0];
+
     items.forEach(item => {
-      if (!meatTypeGroups[item.MeatType]) {
-        meatTypeGroups[item.MeatType] = [];
+      if (item.price < minItem.price) {
+        minItem = item;
       }
-      meatTypeGroups[item.MeatType].push(item);
+      if (item.price > maxItem.price) {
+        maxItem = item;
+      }
     });
 
-    const results = {};
+    // Create result object
+    const resultItem = {
+      MeatType,
+      brand
+    };
 
-    // For each meat type, group by brand and find min/max
-    Object.keys(meatTypeGroups).forEach(meatType => {
-      const meatItems = meatTypeGroups[meatType];
+    // Check if min and max are from the same distributor
+    if (minItem.distributor === maxItem.distributor) {
+      // If same distributor, set min to null and keep max
+      resultItem.min = null;
+      resultItem.max = { price: maxItem.price, distributor: maxItem.distributor };
+    } else {
+      // Different distributors, keep both min and max
+      resultItem.min = { price: minItem.price, distributor: minItem.distributor };
+      resultItem.max = { price: maxItem.price, distributor: maxItem.distributor };
+    }
 
-      // Group by brand within this meat type
-      const brandGroups = {};
-      meatItems.forEach(item => {
-        const brandKey = item.Brands;
-        if (!brandGroups[brandKey]) {
-          brandGroups[brandKey] = [];
-        }
-        brandGroups[brandKey].push(item);
-      });
+    // Add to results array
+    results.push(resultItem);
 
-      // For each brand, find min and max prices
-      const brandResults = {};
-      Object.keys(brandGroups).forEach(brand => {
-        const items = brandGroups[brand];
+  });
 
-        // Find min price and supplier
-        const minPriceItem = items.reduce((min, item) =>
-          item.Prices < min.Prices ? item : min, items[0]);
-
-        // Find max price and supplier
-        const maxPriceItem = items.reduce((max, item) =>
-          item.Prices > max.Prices ? item : max, items[0]);
-
-        brandResults[brand] = {
-          minPrice: minPriceItem.Prices,
-          minPriceCompany: minPriceItem.Company,
-          minPriceTime: new Date(minPriceItem.Timestamp).toLocaleString(),
-          maxPrice: maxPriceItem.Prices,
-          maxPriceCompany: maxPriceItem.Company,
-          maxPriceTime: new Date(maxPriceItem.timestamp).toLocaleString(),
-          dataPoints: items.length
-        };
-      });
-
-      // Also find overall min/max for this meat type across all brands
-      const minPriceItem = meatItems.reduce((min, item) =>
-        item.Prices < min.Prices ? item : min, meatItems[0]);
-
-      const maxPriceItem = meatItems.reduce((max, item) =>
-        item.Prices > max.Prices ? item : max, meatItems[0]);
-
-      results[meatType] = {
-        brands: brandResults,
-        overallMin: {
-          price: minPriceItem.Prices,
-          company: minPriceItem.Company,
-          brand: minPriceItem.Brands,
-          time: new Date(minPriceItem.Timestamp).toLocaleString()
-        },
-        overallMax: {
-          price: maxPriceItem.Prices,
-          company: maxPriceItem.Company,
-          brand: maxPriceItem.Brands,
-          time: new Date(maxPriceItem.Timestamp).toLocaleString()
-        },
-        totalDataPoints: meatItems.length
-      };
-    });
-
-  console.log(results);
   } catch (error) {
     console.error("Error fetching data:", error);
     throw error;

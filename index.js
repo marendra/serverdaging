@@ -34,7 +34,7 @@ try {
 
         // Check if the message is coming from the target group:
         if (chat.id._serialized === "120363316186563669@g.us") {
-            console.log("Received message from target group:", message.body);
+            console.log("Received message from target group:");
 
             // Write the message into Cloud Firestore using milliseconds since epoch:
             await db.collection("groupMessages").add({
@@ -48,7 +48,7 @@ try {
                 timestamp: Date.now() // Timestamp in milliseconds since epoch
             });
 
-            console.log("Message stored in Cloud Firestore.");
+            console.log("Message stored in Cloud Firestore. on  " + new Date(Date.now()).toLocaleString() + " " + new Date(Date.now()).toLocaleTimeString());
         }
     } catch (error) {
         console.error("Error processing or saving message:", error);
