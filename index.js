@@ -1,9 +1,31 @@
 import pkg from 'whatsapp-web.js';
 import admin from 'firebase-admin';
 import {getFirestore} from "firebase-admin/firestore";
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
 
 const { Client ,LocalAuth} = pkg;
-import serviceAccount  from "./daging.json" with {type:'json'}
+
+// Helper to get the current directory in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Construct the full path to the JSON file
+const jsonPath = path.join(__dirname, './daging.json');
+
+// Read the file synchronously (common for config files at startup)
+let serviceAccount;
+try {
+  const fileContent = fs.readFileSync(jsonPath, 'utf8');
+  serviceAccount = JSON.parse(fileContent);
+} catch (error) {
+  console.error("Error reading or parsing daging.json:", error);
+  process.exit(1); // Exit if loading fails
+}
+
+
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
