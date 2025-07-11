@@ -153,7 +153,7 @@ async function syncMissedMessages(groupId) {
         if (missedMessages.length > 0) {
             // Store missed messages in Firestore in batches (Firestore has batch write limits)
             const batch = db.batch();
-            let batchCount = 0;å
+            let batchCount = 0;
             const batchSize = 500; // Max batch size is 500 operations
 
             for (const msg of missedMessages) {
