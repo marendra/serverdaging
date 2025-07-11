@@ -503,4 +503,243 @@ async function deletePricesData(startDate) {
   console.log("Done deleted " + result.docs.length + " messages")
 }
 
-readIndia()
+
+async function findAndStoreMaxMin( db,today) {
+
+
+console.log("running find and store max min function at:", today);
+const { startOfDay, endOfDay } = getStartAndEndOfDay(today);
+
+console.log("start of day:", startOfDay);
+console.log("end of day:", endOfDay);
+
+const startOfDayJakarta=startOfDay
+const endOfDayJakarta=endOfDay
+
+  console.log("start of day Jakarta:", startOfDayJakarta);
+console.log("end of day Jakarta:", endOfDayJakarta);
+
+  const querySnapshot = await db.collection("pricesData").where("Timestamp", ">=", startOfDayJakarta).where("Timestamp", "<=", endOfDayJakarta).get();
+  console.log(querySnapshot.docs.length);
+  const priceData = [];
+
+  querySnapshot.forEach((doc) => {
+    priceData.push({
+      type: doc.data().MeatType,
+      brand: doc.data().Brands,
+      price: doc.data().Prices,
+      distributor: doc.data().Company
+    });
+  });
+
+  // Group data by type-brand combination
+  const groupedData = {};
+
+  priceData.forEach(item => {
+    const key = `${item.type}-${item.brand}`;
+
+    if (!groupedData[key]) {
+      groupedData[key] = [];
+    }
+
+    groupedData[key].push(item);
+  });
+
+  // Process each group to find min and max
+  const results = [];
+
+  Object.keys(groupedData).forEach(key => {
+    const items = groupedData[key];
+    const type = items[0].type;
+    const brand = items[0].brand;
+
+    // Find min and max across all distributors
+    let minItem = items[0];
+    let maxItem = items[0];
+
+    items.forEach(item => {
+      if (item.price < minItem.price) {
+        minItem = item;
+      }
+      if (item.price > maxItem.price) {
+        maxItem = item;
+      }
+    });
+
+    // Create result object
+    const resultItem = {
+      type,
+      brand,
+      date: startOfDay, // Use start of day as the timestamp
+    };
+
+    // Check if min and max are from the same distributor
+    if (minItem.distributor === maxItem.distributor) {
+      // If same distributor, set min to null and keep max
+      resultItem.min = null;
+      resultItem.max = { price: maxItem.price, distributor: maxItem.distributor };
+    } else {
+      // Different distributors, keep both min and max
+      resultItem.min = { price: minItem.price, distributor: minItem.distributor };
+      resultItem.max = { price: maxItem.price, distributor: maxItem.distributor };
+    }
+
+    // Add to results array
+    results.push(resultItem);
+  });
+
+  // Store results in Firestore
+  const batchWrites = [];
+
+
+  for (const result of results) {
+    // Create a document ID that combines date, type, and brand for uniqueness
+    const docId = `${startOfDay}-${result.type}-${result.brand}`.replace(/\s+/g, "_");
+
+    let minPrice = 0;
+    let maxPrice = 0;
+    let distributorMin =""
+    let distributorMax =""
+
+    if(result.min!==null){
+      minPrice = result.min.price
+      distributorMin = result.min.distributor
+    }
+    if (result.max.price!==null){
+      maxPrice = result.max.price
+      distributorMax = result.max.distributor
+    }
+    const writeDb = db.collection("minmaxPrices").doc(docId).set({
+       meatType: result.type,
+  brand: result.brand,
+  date: startOfDay,
+  maxPrice: maxPrice,
+  minPrice: minPrice,
+  distributorMin: distributorMin,
+  distributorMax: distributorMax,
+  createdAt: new Date()
+    })
+
+
+    batchWrites.push(writeDb)
+  }
+
+ await Promise.all(batchWrites);
+
+  return results;
+}
+function getStartAndEndOfDay(inputDay) {
+  // Use the provided inputDay
+  const jakartaTimeZone = "Asia/Jakarta";
+  const startOfDay = new Date(inputDay.toLocaleString("en-US", { timeZone: jakartaTimeZone }));
+  startOfDay.setHours(0, 0, 0, 0);
+ const endOfDay = new Date(inputDay.toLocaleString("en-US", { timeZone: jakartaTimeZone }));
+  endOfDay.setHours(23, 59, 59, 999);
+
+
+
+  return { startOfDay:startOfDay.getTime(), endOfDay:endOfDay.getTime() };
+}
+
+async function saveCompanyData() {
+  const arrayCompanyName = ["Suri Nusantara Jaya Kosambi","Suri Nusantara Jaya Karawaci","E M S","CITRA SUMBER NUSANTARA","ARDHANA PERMATA ANUGERAH","Hijrahfood","ESTIKA TATA TIARA PUSAT","ESTIKA TATA TIARA TGR","Berkat Mandiri Prima","RASKA ANUGERAH UTAMA"]
+
+  const Promises = []
+  for (let i = 0; i < arrayCompanyName.length; i++) {
+    console.log(i)
+    console.log(arrayCompanyName[i])
+    Promises.push(db.collection("companies").doc(i.toString()).set({
+      companyName: arrayCompanyName[i]
+    }))
+  }
+  await Promise.all(Promises)
+console.log("done")
+}
+
+async function getMinMaxlatestDate(){
+   const arrayCompanyName = ["Suri Nusantara Jaya Kosambi","Suri Nusantara Jaya Karawaci","E M S","CITRA SUMBER NUSANTARA","ARDHANA PERMATA ANUGERAH","Hijrahfood","ESTIKA TATA TIARA PUSAT","ESTIKA TATA TIARA TGR","Berkat Mandiri Prima","RASKA ANUGERAH UTAMA"]
+
+  const priceData=[]
+
+for (let i = 0; i < arrayCompanyName.length; i++) {
+  const company = arrayCompanyName[i]
+
+  const latestDate = await db.collection("pricesData").where("Company", "==", company).where("Country", "==", "India").orderBy("Timestamp", "desc").limit(1).get()
+
+ const timeStampCompany = latestDate.docs[0].data().Timestamp
+ console.log(timeStampCompany)
+  const companyData = await db.collection("pricesData").where("Company", "==", company)
+      .where("Timestamp","==",timeStampCompany).get()
+  console.log(companyData.docs.length)
+  companyData.docs.forEach(doc => {
+    priceData.push({
+      brand:doc.data().Brands,
+      distributor:doc.data().Company,
+      MeatType:doc.data().MeatType,
+      price:doc.data().Prices,
+    })
+  })
+
+}
+
+  const groupedData = {};
+
+  priceData.forEach(item => {
+    const key = `${item.MeatType}-${item.brand}`;
+
+    if (!groupedData[key]) {
+      groupedData[key] = [];
+    }
+
+    groupedData[key].push(item);
+  });
+
+  // Process each group to find min and max
+  const results = [];
+
+  Object.keys(groupedData).forEach(key => {
+    const items = groupedData[key];
+    const MeatType = items[0].MeatType;
+    const brand = items[0].brand;
+
+    // Find min and max across all distributors
+    let minItem = items[0];
+    let maxItem = items[0];
+
+    items.forEach(item => {
+      if (item.price < minItem.price) {
+        minItem = item;
+      }
+      if (item.price > maxItem.price) {
+        maxItem = item;
+      }
+    });
+
+    // Create result object
+    const resultItem = {
+      MeatType,
+      brand
+    };
+
+    // Check if min and max are from the same distributor
+    if (minItem.distributor === maxItem.distributor) {
+      // If same distributor, set min to null and keep max
+      resultItem.min = null;
+      resultItem.max = { price: maxItem.price, distributor: maxItem.distributor };
+    } else {
+      // Different distributors, keep both min and max
+      resultItem.min = { price: minItem.price, distributor: minItem.distributor };
+      resultItem.max = { price: maxItem.price, distributor: maxItem.distributor };
+    }
+
+    // Add to results array
+    results.push(resultItem);
+
+  });
+console.log(results);
+
+
+}
+
+
+await findAndStoreMaxMin(db,"6-Jul-2025")
