@@ -1,7 +1,8 @@
 import admin from 'firebase-admin';
 import {getFirestore} from "firebase-admin/firestore";
 import {GoogleGenerativeAI} from '@google/generative-ai';
-
+import fs from 'fs';
+import moment from 'moment';
 
 import serviceAccount  from "./daging.json" with {type:'json'}
 
@@ -197,9 +198,9 @@ console.log(`Total updated ${companyName} data`, totalUpdate)
 
 async function readIndia () {
   console.log("Read India Meat Type")
-  const arrayCompanyId=["Cabang Duri Kosambi","*Cabang Karawaci*","E M S","CITRA SUMBER NUSANTARA","ARDHANA PERMATA ANUGERAH","Hijrahfood","https://maps.app.goo.gl/FuM13jLAc3Bh2moQ8?g_st=aw","https://maps.app.goo.gl/f3oVp2Pa3BfjsKsTA","Berkat Mandiri Prima","PT.RASKA"]
+  const arrayCompanyId=["Cabang Duri Kosambi","*Cabang Karawaci*","E M S","CITRA SUMBER NUSANTARA","ARDHANA PERMATA ANUGERAH","Hijrahfood","https://maps.app.goo.gl/FuM13jLAc3Bh2moQ8?g_st=aw","https://maps.app.goo.gl/f3oVp2Pa3BfjsKsTA","Berkat Mandiri Prima","PT.RASKA","PT SARI BERKAT ABADI"]
 
-  const arrayCompanyName = ["Suri Nusantara Jaya Kosambi","Suri Nusantara Jaya Karawaci","E M S","CITRA SUMBER NUSANTARA","ARDHANA PERMATA ANUGERAH","Hijrahfood","ESTIKA TATA TIARA PUSAT","ESTIKA TATA TIARA TGR","Berkat Mandiri Prima","RASKA ANUGERAH UTAMA"]
+  const arrayCompanyName = ["Suri Nusantara Jaya Kosambi","Suri Nusantara Jaya Karawaci","E M S","CITRA SUMBER NUSANTARA","ARDHANA PERMATA ANUGERAH","Hijrahfood","ESTIKA TATA TIARA PUSAT","ESTIKA TATA TIARA TGR","Berkat Mandiri Prima","RASKA ANUGERAH UTAMA","PT SARI BERKAT ABADI"]
   const alldata = await db.collection("groupMessages").where("readIndia", "==", false).get();
 
     for (let i = 0; i < arrayCompanyId.length; i++) {
@@ -314,7 +315,44 @@ console.log(querySnapshot.docs.length)
     results.push(resultItem);
   });
 
-  console.log(results);
+    // Store results in Firestore
+  const batchWrites = [];
+
+
+  for (const result of results) {
+    // Create a document ID that combines date, type, and brand for uniqueness
+    const docId = `${startOfDay}-${result.type}-${result.brand}`.replace(/\s+/g, "_");
+
+    let minPrice = 0;
+    let maxPrice = 0;
+    let distributorMin =""
+    let distributorMax =""
+
+    if(result.min!==null){
+      minPrice = result.min.price
+      distributorMin = result.min.distributor
+    }
+    if (result.max.price!==null){
+      maxPrice = result.max.price
+      distributorMax = result.max.distributor
+    }
+    const writeDb = db.collection("minmaxPrices").doc(docId).set({
+       meatType: result.type,
+  brand: result.brand,
+  date: startOfDay,
+  maxPrice: maxPrice,
+  minPrice: minPrice,
+  distributorMin: distributorMin,
+  distributorMax: distributorMax,
+  createdAt: new Date()
+    })
+
+
+    batchWrites.push(writeDb)
+  }
+
+ await Promise.all(batchWrites);
+  console.log("total results", results.length)
   return results;
 }
 
@@ -656,21 +694,33 @@ async function saveCompanyData() {
 console.log("done")
 }
 
-async function getMinMaxlatestDate(){
-   const arrayCompanyName = ["Suri Nusantara Jaya Kosambi","Suri Nusantara Jaya Karawaci","E M S","CITRA SUMBER NUSANTARA","ARDHANA PERMATA ANUGERAH","Hijrahfood","ESTIKA TATA TIARA PUSAT","ESTIKA TATA TIARA TGR","Berkat Mandiri Prima","RASKA ANUGERAH UTAMA"]
+async function getMinMaxlatestDate(today,country){
+    const arrayCompanyName = ["Suri Nusantara Jaya Kosambi","Suri Nusantara Jaya Karawaci","E M S","CITRA SUMBER NUSANTARA","ARDHANA PERMATA ANUGERAH","Hijrahfood","ESTIKA TATA TIARA PUSAT","ESTIKA TATA TIARA TGR","Berkat Mandiri Prima","RASKA ANUGERAH UTAMA","PT SARI BERKAT ABADI"]
 
   const priceData=[]
+  const dateToday = new Date(today)
+const todayLastMillisecond = (60*60*1000*24)-1
+
 
 for (let i = 0; i < arrayCompanyName.length; i++) {
   const company = arrayCompanyName[i]
 
-  const latestDate = await db.collection("pricesData").where("Company", "==", company).where("Country", "==", "India").orderBy("Timestamp", "desc").limit(1).get()
+  const latestDate = await db.collection("pricesData")
+      .where("Company", "==", company).where("Country", "==", "India")
+      .where("Timestamp","<=",dateToday.getTime()+todayLastMillisecond)
+      .where("Country","==",country)
+      .orderBy("Timestamp", "desc").limit(1).get()
+
+   if (latestDate.empty) continue;
+
+  console.log("latest Date for company: " + company + " is " + new Date(latestDate.docs[0].data().Timestamp) )
+
 
  const timeStampCompany = latestDate.docs[0].data().Timestamp
- console.log(timeStampCompany)
+
   const companyData = await db.collection("pricesData").where("Company", "==", company)
       .where("Timestamp","==",timeStampCompany).get()
-  console.log(companyData.docs.length)
+
   companyData.docs.forEach(doc => {
     priceData.push({
       brand:doc.data().Brands,
@@ -736,10 +786,100 @@ for (let i = 0; i < arrayCompanyName.length; i++) {
     results.push(resultItem);
 
   });
-console.log(results);
+  await fs.writeFileSync("./results.json", JSON.stringify(results));
+
+  const batchWrites=[]
+
+  const startOfDay = new Date(
+      dateToday.getFullYear(),
+      dateToday.getMonth(),
+      dateToday.getDate()
+    ).getTime();
+
+  for (const result of results) {
+    // Create a document ID that combines date, type, and brand for uniqueness
+    const docId = `${startOfDay}-${result.type}-${result.brand}`.replace(/\s+/g, "_");
+
+    let minPrice = 0;
+    let maxPrice = 0;
+    let distributorMin =""
+    let distributorMax =""
+
+    if(result.min!==null){
+      minPrice = result.min.price
+      distributorMin = result.min.distributor
+    }
+    if (result.max.price!==null){
+      maxPrice = result.max.price
+      distributorMax = result.max.distributor
+    }
+    const data = {
+      meatType: result.MeatType,
+  brand: result.brand,
+  date: startOfDay,
+  maxPrice: maxPrice,
+  minPrice: minPrice,
+	country: country,
+  distributorMin: distributorMin,
+  distributorMax: distributorMax,
+  createdAt: new Date()
+    }
+
+    const writeDb = db.collection("minmaxPrices").doc(docId).set(data)
+
+
+
+    batchWrites.push(writeDb)
+  }
+
+ await Promise.all (batchWrites);
+
+
+  console.log("done");
 
 
 }
 
 
-await findAndStoreMaxMin(db,"6-Jul-2025")
+async function cleanMinMaxData(tgl){
+  const dateToday = new Date(tgl)
+
+   const startOfDay = new Date(
+      dateToday.getFullYear(),
+      dateToday.getMonth(),
+      dateToday.getDate()
+    ).getTime();
+
+  const data = await db.collection("minmaxPrices")
+      .where("date","==",startOfDay).get()
+
+  if (!data.empty){
+     const batchDelete=[]
+
+    data.forEach(item => {
+      const deleteData = db.collection("minmaxPrices").doc(item.id).delete()
+      batchDelete.push(deleteData)
+    })
+
+    await Promise.all(batchDelete)
+    console.log("done delete data for ", dateToday)
+
+}
+  }
+
+
+  const epochlast =1754703904898
+
+async function deleteLastEpoch (epoch){
+    const deleteData = await db.collection ("groupMessages").where("timestamp",">",epoch).get()
+    const batchDelete=[]
+    console.log("total data",deleteData.docs.length)
+    deleteData.forEach(item => {
+      const deleteData = db.collection("groupMessages").doc(item.id).delete()
+      batchDelete.push(deleteData)
+    })
+    await Promise.all(batchDelete)
+    console.log("done delete data of",batchDelete.length)
+
+}
+

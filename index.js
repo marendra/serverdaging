@@ -11,7 +11,7 @@ const { Client ,LocalAuth} = pkg;
 // Helper to get the current directory in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
+const syncingGroups = new Set();
 // Construct the full path to the JSON file
 const jsonPath = path.join(__dirname, './daging.json');
 
@@ -86,108 +86,99 @@ client.on("qr",qr=>{
 })
 
 async function syncMissedMessages(groupId) {
-    try {
-        console.log(`Attempting to sync missed messages for group ${groupId}...`);
+  try {
+    console.log(`Attempting to sync missed messages for group ${groupId}...`);
 
-        const chat = await client.getChatById(groupId);
-        if (!chat) {
-            console.log(`Group with ID ${groupId} not found.`);
-            return;
-        }
-
-        // 1. Get the latest timestamp from Firestore for this group
-        const latestFirestoreMessageSnapshot = await db.collection("groupMessages")
-            .where("groupId", "==", groupId)
-            .orderBy("timestamp", "desc")
-            .limit(1)
-            .get();
-
-        let lastSyncedTimestamp = 0; // Default to epoch if no messages found
-        if (!latestFirestoreMessageSnapshot.empty) {
-            lastSyncedTimestamp = latestFirestoreMessageSnapshot.docs[0].data().timestamp;
-            console.log(`Latest message in Firestore for ${groupId} has timestamp: ${new Date(lastSyncedTimestamp).toLocaleString()}`);
-        } else {
-            console.log(`No previous messages found in Firestore for group ${groupId}. Fetching recent history.`);
-            // If no messages exist, fetch from a reasonable past, e.g., 7 days ago
-            lastSyncedTimestamp = moment().subtract(7, 'days').valueOf();
-        }
-
-        // Ensure we fetch a reasonable window, e.g., messages newer than the last synced, but not too far back
-        // WhatsApp Web usually holds a limited history (e.g., last few thousand messages).
-        // Fetching too many can be slow and problematic.
-        const messagesToFetchLimit = 1000; // Adjust this limit based on group activity and desired history
-        let allFetchedMessages = [];
-        let hasMore = true;
-        let beforeMessageId = undefined; // For pagination
-
-        console.log(`Fetching up to ${messagesToFetchLimit} messages from WhatsApp Web...`);
-
-        // Loop to fetch messages from WhatsApp Web until we have enough or hit limits
-        while (hasMore && allFetchedMessages.length < messagesToFetchLimit) {
-            const fetched = await chat.fetchMessages({ limit: 100, before: beforeMessageId }); // Fetch in chunks
-            if (fetched.length === 0) {
-                hasMore = false;
-                break;
-            }
-
-            allFetchedMessages.push(...fetched);
-            beforeMessageId = fetched[fetched.length - 1].id;
-
-
-            if (moment.unix(fetched[fetched.length - 1].timestamp).valueOf() < lastSyncedTimestamp) {
-                hasMore = false;
-            }
-        }
-
-        // Sort messages by timestamp to ensure correct order
-        allFetchedMessages.sort((a, b) => a.timestamp - b.timestamp);
-
-        // Filter out messages that are older than or equal to the last synced timestamp
-        const missedMessages = allFetchedMessages.filter(msg => {
-            const msgTimestampMs = moment.unix(msg.timestamp).valueOf(); // Convert Unix timestamp (seconds) to milliseconds
-            return msgTimestampMs > lastSyncedTimestamp;
-        });
-
-        console.log(`Found ${missedMessages.length} missed messages from WhatsApp Web.`);
-
-        if (missedMessages.length > 0) {
-            // Store missed messages in Firestore in batches (Firestore has batch write limits)
-            const batch = db.batch();
-            let batchCount = 0;
-            const batchSize = 500; // Max batch size is 500 operations
-
-            for (const msg of missedMessages) {
-                const docRef = db.collection("groupMessages").doc(); // Let Firestore auto-generate ID
-                batch.set(docRef, {
-                    groupId: chat.id._serialized,
-                    groupName: chat.name,
-                    message: msg.body,
-                    readIndia: false,
-                    readAustralia: false,
-                    readUsa: false,
-                    readBrazil: false,
-                    timestamp: moment.unix(msg.timestamp).valueOf() // Store in milliseconds
-                });
-                batchCount++;
-
-                if (batchCount === batchSize) {
-                    await batch.commit();
-                    console.log(`Committed a batch of ${batchSize} missed messages.`);
-                    batchCount = 0;
-                }
-            }
-            if (batchCount > 0) {
-                await batch.commit();
-                console.log(`Committed final batch of ${batchCount} missed messages.`);
-            }
-            console.log(`Successfully stored ${missedMessages.length} missed messages in Cloud Firestore.`);
-        } else {
-            console.log("No new missed messages to store from WhatsApp Web.");
-        }
-
-    } catch (error) {
-        console.error("Error syncing missed messages:", error);
+    const chat = await client.getChatById(groupId);
+    if (!chat) {
+      console.log(`Group with ID ${groupId} not found.`);
+      return;
     }
+
+    // Get last synced ts (ms). If none, default to 7d ago.
+    const latestSnap = await db.collection("groupMessages")
+      .where("groupId", "==", groupId)
+      .orderBy("timestamp", "desc")
+      .limit(1)
+      .get();
+
+    let lastSyncedTsMs = latestSnap.empty
+      ? Date.now() - 7 * 24 * 60 * 60 * 1000
+      : Number(latestSnap.docs[0].data().timestamp) || 0;
+
+    console.log(
+      latestSnap.empty
+        ? `No previous messages. Using ~7 days ago.`
+        : `Latest stored ts: ${new Date(lastSyncedTsMs).toLocaleString()}`
+    );
+
+    // Fetch from WA
+    const LIMIT_TOTAL = 2000; // optional higher ceiling
+    let allFetched = [];
+    let beforeMessageId;
+    let hasMore = true;
+
+    while (hasMore && allFetched.length < LIMIT_TOTAL) {
+      const page = await chat.fetchMessages({ limit: 100, before: beforeMessageId });
+      if (page.length === 0) break;
+
+      allFetched.push(...page);
+      beforeMessageId = page[page.length - 1].id;
+
+      const oldestInPageMs = moment.unix(page[page.length - 1].timestamp).valueOf();
+      if (oldestInPageMs < lastSyncedTsMs) hasMore = false;
+    }
+
+    allFetched.sort((a, b) => a.timestamp - b.timestamp);
+    const missed = allFetched.filter(m => moment.unix(m.timestamp).valueOf() > lastSyncedTsMs);
+
+    console.log(`Found ${missed.length} missed messages from WhatsApp Web.`);
+
+    if (missed.length === 0) {
+      console.log("No new missed messages to store.");
+      return;
+    }
+
+    // Write in batches of <=500 with deterministic IDs to avoid duplicates
+    const CHUNK = 450; // safe margin under 500
+    let written = 0;
+
+    for (let i = 0; i < missed.length; i += CHUNK) {
+      const slice = missed.slice(i, i + CHUNK);
+      const batch = db.batch();
+
+      for (const msg of slice) {
+        const tsMs = moment.unix(msg.timestamp).valueOf();
+        const messageId = msg.id?._serialized ?? String(msg.id);
+        const docId = `${chat.id._serialized}_${messageId}`;
+        const ref = db.collection("groupMessages").doc(docId);
+
+        // `set` with deterministic ID makes the operation idempotent:
+        //   - first time creates the doc
+        //   - next runs just overwrite the same doc (no duplicates)
+        // If you prefer "create once or skip", swap to `batch.create(ref, data)` and catch ALREADY_EXISTS.
+        batch.set(ref, {
+          messageId,
+          groupId: chat.id._serialized,
+          groupName: chat.name || "",
+          message: msg.body || "",
+          readIndia: false,
+          readAustralia: false,
+          readUsa: false,
+          readBrazil: false,
+          timestamp: tsMs,
+        }, { merge: false });
+      }
+
+      await batch.commit();
+      written += slice.length;
+      console.log(`Committed ${written}/${missed.length} messages...`);
+    }
+
+    console.log(`Done. Stored/updated ${written} messages (duplicates prevented by doc IDs).`);
+  } catch (err) {
+    console.error("Error syncing missed messages:", err);
+  }
 }
 
 client.initialize();
